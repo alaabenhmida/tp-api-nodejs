@@ -78,4 +78,5 @@ app.listen(PORT, () => {
     ╚════════════════════════════════════════════╝
     `);
 });
-// Ce commentaire est une erreur
+// Modification temporaire
+// Fonction utilitaire
