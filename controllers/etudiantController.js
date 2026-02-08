@@ -223,4 +223,36 @@ exports.getEtudiantsByFiliere = async (req, res) => {
             error: error. message
         });
     }
+
+    // Recherche avancée avec filtres multiples
+exports.advancedSearch = async (req, res) => {
+    try {
+        const { nom, filiere, anneeMin, anneeMax, moyenneMin } = req.query;
+        let filter = { actif: true };
+
+        if (nom) filter.nom = new RegExp(nom, 'i');
+        if (filiere) filter.filiere = filiere;
+        if (anneeMin || anneeMax) {
+            filter.annee = {};
+            if (anneeMin) filter.annee.$gte = parseInt(anneeMin);
+            if (anneeMax) filter.annee.$lte = parseInt(anneeMax);
+        }
+        if (moyenneMin) filter.moyenne = { $gte: parseFloat(moyenneMin) };
+
+        const etudiants = await Etudiant.find(filter);
+
+        res.status(200).json({
+            success: true,
+            count: etudiants.length,
+            filters: req.query,
+            data: etudiants
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Erreur serveur',
+            error: error.message
+        });
+    }
+};
 };
