@@ -1,0 +1,16 @@
+# Dépendances Node.js (trop volumineux, installable via npm install)
+node_modules/
+
+# Variables d'environnement (contient des données sensibles)
+.env
+
+# Logs
+*.log
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
