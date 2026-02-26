@@ -1,5 +1,6 @@
 // Importer le modèle Etudiant
 const Etudiant = require('../models/Etudiant');
+const mongoose = require('mongoose');
 
 // ============================================
 // CREATE - Créer un nouvel étudiant
@@ -85,6 +86,9 @@ exports.getEtudiantById = async (req, res) => {
     try {
         // Étape 1: Récupérer l'ID depuis les paramètres de l'URL
         // req.params contient les paramètres de l'URL
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ message: 'ID invalide' });
+        }
         console.log('🔍 Recherche de l\'ID:', req.params.id);
         
         // Étape 2: Chercher l'étudiant par son ID
