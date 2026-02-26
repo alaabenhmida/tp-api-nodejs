@@ -1,0 +1,39 @@
+name: Tests CI
+
+# Ce workflow se déclenche automatiquement à chaque push sur main
+# et à chaque Pull Request vers main.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest  # GitHub Actions provisionne un serveur Ubuntu propre
+
+    steps:
+      # Étape 1 : récupérer le code source du dépôt
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Étape 2 : installer Node.js version 20
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'   # mise en cache de node_modules pour accélérer les builds suivants
+
+      # Étape 3 : installer les dépendances
+      # npm ci est préféré à npm install en CI : il installe exactement
+      # ce qui est dans package-lock.json, sans résoudre de nouvelles versions.
+      - name: Install dependencies
+        run: npm ci
+
+      # Étape 4 : lancer les tests
+      - name: Run tests
+        run: npm test
+
+      # Étape 5 : générer le rapport de couverture
+      - name: Coverage
+        run: npm run test:coverage

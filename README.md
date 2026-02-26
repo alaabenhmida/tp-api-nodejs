@@ -1,4 +1,7 @@
 # TP API Node.js + MongoDB
+# tp-api-nodejs
+
+![Tests CI](https://github.com/VOTRE_USERNAME/VOTRE_REPO/actions/workflows/ci.yml/badge.svg)
 
 API REST de gestion d'étudiants développée avec Node.js, Express et MongoDB.
 
