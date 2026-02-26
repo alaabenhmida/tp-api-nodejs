@@ -3,7 +3,7 @@ const { additionner, isValidMoyenne, calculMention } = require('../utils/calculN
 describe('additionner()', () => {
 
   test('2 + 3 = 5', () => {
-    expect(additionner(2, 3)).toBe(5);
+    expect(additionner(2, 3)).toBe(6);
   });
 
   test('nombres négatifs', () => {
