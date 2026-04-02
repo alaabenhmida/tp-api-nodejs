@@ -1,0 +1,38 @@
+name: CI - Coverage
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    name: Couverture de code
+
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Installer Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Installer les dépendances
+        run: npm ci
+
+      - name: 📊 Générer le rapport de couverture
+        run: npm run test:coverage
+
+      # Uploader le rapport comme artefact téléchargeable
+      - name: 📁 Uploader le rapport de couverture
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+          # Le rapport sera conservé 7 jours, téléchargeable
+          # depuis l'interface GitHub Actions
