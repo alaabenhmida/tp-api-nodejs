@@ -1,49 +1,40 @@
-# Nom du workflow (affiché dans l'interface GitHub)
 name: CI - Tests
 
-# ============================================
-# DÉCLENCHEURS
-# ============================================
-# Ce workflow se lance automatiquement dans deux cas :
 on:
   push:
-    branches: [ main ]          # À chaque push sur main
+    branches: [ main ]
   pull_request:
-    branches: [ main ]          # À chaque PR ciblant main
+    branches: [ main ]
 
-# ============================================
-# JOBS
-# ============================================
 jobs:
   tests:
-    # Type de machine virtuelle (runner)
     runs-on: ubuntu-latest
 
     # ============================================
-    # ÉTAPES DU JOB
+    # MATRIX : Tester sur plusieurs versions Node
     # ============================================
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+      # fail-fast: false → si une version échoue,
+      # les autres continuent quand même
+      fail-fast: false
+
+    # Le nom du job inclut la version Node pour la lisibilité
+    name: Tests Node.js ${{ matrix.node-version }}
+
     steps:
-      # Étape 1 : Récupérer le code source
       - name: 📥 Checkout du code
         uses: actions/checkout@v4
-        # actions/checkout clone votre dépôt sur le runner
 
-      # Étape 2 : Installer Node.js
-      - name: 🟢 Installer Node.js 20
+      - name: 🟢 Installer Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
-          # cache: 'npm' met en cache node_modules entre les runs
-          # pour accélérer les builds suivants
 
-      # Étape 3 : Installer les dépendances
       - name: 📦 Installer les dépendances
         run: npm ci
-        # npm ci est préférable à npm install en CI :
-        # il installe EXACTEMENT les versions du package-lock.json
-        # et est plus rapide et plus reproductible
 
-      # Étape 4 : Lancer les tests
       - name: 🧪 Lancer les tests
         run: npm test
