@@ -5,6 +5,12 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      raison:
+        description: 'Raison du lancement manuel'
+        required: false
+        default: 'Test manuel'
 
 jobs:
   tests:
