@@ -1,11 +1,15 @@
 // Importer mongoose pour se connecter à MongoDB
 const mongoose = require('mongoose');
 
+const { MongoMemoryServer } = require('mongodb-memory-server');
+
 // Fonction asynchrone de connexion à la base de données
 const connectDB = async () => {
     try {
+        mongoServer = await MongoMemoryServer.create();
         // Tenter la connexion avec l'URI défini dans .env
-        const conn = await mongoose.connect(process.env.MONGODB_URI);
+        const conn = await mongoose.connect(mongoServer.getUri());
+        //const conn = await mongoose.connect(process.env.MONGODB_URI);
         
         // Si la connexion réussit, afficher un message
         console.log(`✅ MongoDB connecté:  ${conn.connection.host}`);
