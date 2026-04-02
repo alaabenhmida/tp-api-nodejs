@@ -1,0 +1,107 @@
+name: CD - Déploiement
+
+on:
+  # Ce workflow se déclenche SEULEMENT quand un push arrive sur main
+  # ET seulement si le workflow CI réussit
+  workflow_run:
+    workflows: ["CI - Tests"]
+    types:
+      - completed
+    branches: [ main ]
+
+jobs:
+  # ============================================
+  # JOB 1 : Déploiement en Staging
+  # ============================================
+  deploy-staging:
+    runs-on: ubuntu-latest
+    name: 🚀 Déployer en Staging
+
+    # Ne s'exécute que si le workflow CI a réussi
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    # Déclarer l'environnement GitHub (pour le suivi et les protections)
+    environment:
+      name: staging
+      url: https://tp-api-nodejs-staging.example.com
+
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Installer Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Installer les dépendances (production seulement)
+        run: npm ci --omit=dev
+        # --omit=dev n'installe PAS les devDependencies (jest, nodemon, etc.)
+        # ce qui réduit la taille du déploiement
+
+      - name: ✅ Vérification pré-déploiement
+        run: |
+          echo "🔍 Vérification de la structure du projet..."
+          ls -la
+          echo "📦 Version Node.js : $(node --version)"
+          echo "📦 Version npm : $(npm --version)"
+          echo "📋 Dépendances installées :"
+          cat package.json | grep -A 10 '"dependencies"'
+
+      - name: 🚀 Simuler le déploiement en staging
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "   DÉPLOIEMENT EN STAGING"
+          echo "═══════════════════════════════════════"
+          echo "📡 Connexion au serveur staging..."
+          echo "📦 Transfert des fichiers..."
+          echo "🔄 Redémarrage du service..."
+          echo "✅ Déploiement staging terminé !"
+          echo "🌐 URL : https://tp-api-nodejs-staging.example.com"
+          echo "───────────────────────────────────────"
+          echo "Commit déployé : ${{ github.sha }}"
+          echo "Auteur         : ${{ github.actor }}"
+          echo "Message        : ${{ github.event.workflow_run.head_commit.message }}"
+
+  # ============================================
+  # JOB 2 : Déploiement en Production (manuel)
+  # ============================================
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: 🏭 Déployer en Production
+
+    # Ce job attend que staging soit terminé
+    needs: deploy-staging
+
+    environment:
+      name: production
+      url: https://tp-api-nodejs.example.com
+
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+
+      - name: 🟢 Installer Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 📦 Installer les dépendances (production seulement)
+        run: npm ci --omit=dev
+
+      - name: 🏭 Simuler le déploiement en production
+        run: |
+          echo "═══════════════════════════════════════"
+          echo "   DÉPLOIEMENT EN PRODUCTION"
+          echo "═══════════════════════════════════════"
+          echo "🔒 Vérification des permissions..."
+          echo "📡 Connexion au serveur de production..."
+          echo "📦 Transfert des fichiers..."
+          echo "🔄 Redémarrage du service..."
+          echo "✅ Déploiement production terminé !"
+          echo "🌐 URL : https://tp-api-nodejs.example.com"
+          echo "───────────────────────────────────────"
+          echo "Commit déployé : ${{ github.sha }}"
+          echo "Auteur         : ${{ github.actor }}"
