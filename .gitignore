@@ -3,6 +3,7 @@ node_modules/
 
 # Variables d'environnement (contient des données sensibles)
 .env
+coverage/
 
 # Logs
 *.log
