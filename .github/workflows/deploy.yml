@@ -34,14 +34,14 @@ jobs:
           mkdir -p ~/.ssh
           
           # Écrire la clé privée dans un fichier
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          printf "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
           
           # Sécuriser les permissions (obligatoire pour SSH)
           chmod 600 ~/.ssh/ec2_key
           
           # Ajouter le serveur EC2 aux hôtes connus
           # (évite le prompt "Are you sure you want to continue connecting?")
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
       # Étape 3 : Copier les fichiers vers EC2
       - name: 📦 Transférer les fichiers vers EC2
