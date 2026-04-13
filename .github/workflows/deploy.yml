@@ -34,7 +34,7 @@ jobs:
           mkdir -p ~/.ssh
           
           # Écrire la clé privée dans un fichier
-          printf "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          printf "%s" "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
           
           # Sécuriser les permissions (obligatoire pour SSH)
           chmod 600 ~/.ssh/ec2_key
