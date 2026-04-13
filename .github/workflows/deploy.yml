@@ -1,8 +1,7 @@
-name: CD - Déploiement
+name: CD - Déploiement AWS
 
 on:
-  # Ce workflow se déclenche SEULEMENT quand un push arrive sur main
-  # ET seulement si le workflow CI réussit
+  # Se déclenche après la réussite du workflow CI
   workflow_run:
     workflows: ["CI - Tests"]
     types:
@@ -11,97 +10,101 @@ on:
 
 jobs:
   # ============================================
-  # JOB 1 : Déploiement en Staging
+  # JOB 1 : Déployer sur EC2
   # ============================================
-  deploy-staging:
+  deploy:
     runs-on: ubuntu-latest
-    name: 🚀 Déployer en Staging
+    name: 🚀 Déployer sur EC2
 
-    # Ne s'exécute que si le workflow CI a réussi
+    # Ne s'exécute que si le CI a réussi
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-
-    # Déclarer l'environnement GitHub (pour le suivi et les protections)
-    environment:
-      name: staging
-      url: https://tp-api-nodejs-staging.example.com
-
-    steps:
-      - name: 📥 Checkout du code
-        uses: actions/checkout@v4
-
-      - name: 🟢 Installer Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: 📦 Installer les dépendances (production seulement)
-        run: npm ci --omit=dev
-        # --omit=dev n'installe PAS les devDependencies (jest, nodemon, etc.)
-        # ce qui réduit la taille du déploiement
-
-      - name: ✅ Vérification pré-déploiement
-        run: |
-          echo "🔍 Vérification de la structure du projet..."
-          ls -la
-          echo "📦 Version Node.js : $(node --version)"
-          echo "📦 Version npm : $(npm --version)"
-          echo "📋 Dépendances installées :"
-          cat package.json | grep -A 10 '"dependencies"'
-
-      - name: 🚀 Simuler le déploiement en staging
-        run: |
-          echo "═══════════════════════════════════════"
-          echo "   DÉPLOIEMENT EN STAGING"
-          echo "═══════════════════════════════════════"
-          echo "📡 Connexion au serveur staging..."
-          echo "📦 Transfert des fichiers..."
-          echo "🔄 Redémarrage du service..."
-          echo "✅ Déploiement staging terminé !"
-          echo "🌐 URL : https://tp-api-nodejs-staging.example.com"
-          echo "───────────────────────────────────────"
-          echo "Commit déployé : ${{ github.sha }}"
-          echo "Auteur         : ${{ github.actor }}"
-          echo "Message        : ${{ github.event.workflow_run.head_commit.message }}"
-
-  # ============================================
-  # JOB 2 : Déploiement en Production (manuel)
-  # ============================================
-  deploy-production:
-    runs-on: ubuntu-latest
-    name: 🏭 Déployer en Production
-
-    # Ce job attend que staging soit terminé
-    needs: deploy-staging
 
     environment:
       name: production
-      url: https://tp-api-nodejs.example.com
+      url: http://${{ secrets.EC2_HOST }}:3000
 
     steps:
+      # Étape 1 : Récupérer le code source
       - name: 📥 Checkout du code
         uses: actions/checkout@v4
 
-      - name: 🟢 Installer Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: 📦 Installer les dépendances (production seulement)
-        run: npm ci --omit=dev
-
-      - name: 🏭 Simuler le déploiement en production
+      # Étape 2 : Installer la clé SSH
+      - name: 🔑 Configurer la clé SSH
         run: |
-          echo "═══════════════════════════════════════"
-          echo "   DÉPLOIEMENT EN PRODUCTION"
-          echo "═══════════════════════════════════════"
-          echo "🔒 Vérification des permissions..."
-          echo "📡 Connexion au serveur de production..."
-          echo "📦 Transfert des fichiers..."
-          echo "🔄 Redémarrage du service..."
-          echo "✅ Déploiement production terminé !"
-          echo "🌐 URL : https://tp-api-nodejs.example.com"
-          echo "───────────────────────────────────────"
-          echo "Commit déployé : ${{ github.sha }}"
-          echo "Auteur         : ${{ github.actor }}"
+          # Créer le dossier SSH
+          mkdir -p ~/.ssh
+          
+          # Écrire la clé privée dans un fichier
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          
+          # Sécuriser les permissions (obligatoire pour SSH)
+          chmod 600 ~/.ssh/ec2_key
+          
+          # Ajouter le serveur EC2 aux hôtes connus
+          # (évite le prompt "Are you sure you want to continue connecting?")
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      # Étape 3 : Copier les fichiers vers EC2
+      - name: 📦 Transférer les fichiers vers EC2
+        run: |
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '.env' \
+            --exclude 'coverage' \
+            --exclude '__tests__' \
+            -e "ssh -i ~/.ssh/ec2_key" \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/app/
+          # rsync copie uniquement les fichiers modifiés (différentiel)
+          # --delete supprime les fichiers distants qui n'existent plus localement
+          # --exclude évite de copier les fichiers inutiles en production
+
+      # Étape 4 : Installer les dépendances et redémarrer
+      - name: 🔄 Installer et redémarrer l'application
+        run: |
+          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+            cd /home/ec2-user/app
+            
+            echo "📦 Installation des dépendances de production..."
+            npm install --omit=dev
+            
+            echo "🔄 Redémarrage de l'application avec PM2..."
+            pm2 startOrReload ecosystem.config.js --env production
+            
+            echo "⏳ Attente du démarrage (3 secondes)..."
+            sleep 3
+            
+            echo "✅ Statut PM2 :"
+            pm2 status
+            
+            echo "📋 Dernières lignes de log :"
+            pm2 logs tp-api --lines 5 --nostream
+          ENDSSH
+
+      # Étape 5 : Vérifier que l'API répond
+      - name: 🏥 Health check
+        run: |
+          echo "🔍 Vérification que l'API répond..."
+          
+          # Attendre jusqu'à 30 secondes que l'API soit prête
+          for i in {1..10}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              http://${{ secrets.EC2_HOST }}:3000/ || echo "000")
+            
+            if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 500 ]; then
+              echo "✅ API accessible ! (HTTP $HTTP_STATUS)"
+              exit 0
+            fi
+            
+            echo "⏳ Tentative $i/10 — HTTP $HTTP_STATUS — nouvelle tentative dans 3s..."
+            sleep 3
+          done
+          
+          echo "❌ L'API ne répond pas après 30 secondes"
+          exit 1
+
+      # Étape 6 : Nettoyer la clé SSH
+      - name: 🧹 Nettoyage
+        if: always()
+        run: |
+          rm -f ~/.ssh/ec2_key
