@@ -61,7 +61,7 @@ jobs:
       # Étape 4 : Installer les dépendances et redémarrer
       - name: 🔄 Installer et redémarrer l'application
         run: |
-          ssh -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -i ~/.ssh/ec2_key ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
             cd /home/ec2-user/app
             
             echo "📦 Installation des dépendances de production..."
@@ -77,7 +77,7 @@ jobs:
             pm2 status
             
             echo "📋 Dernières lignes de log :"
-            pm2 logs tp-api --lines 5 --nostream
+            pm2 describe tp-api
           ENDSSH
 
       # Étape 5 : Vérifier que l'API répond
