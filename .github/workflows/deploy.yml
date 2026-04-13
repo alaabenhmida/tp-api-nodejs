@@ -68,7 +68,8 @@ jobs:
             npm install --omit=dev
             
             echo "🔄 Redémarrage de l'application avec PM2..."
-            pm2 startOrReload ecosystem.config.js --env production
+            pm2 delete tp-api || true
+            pm2 start ecosystem.config.js --env production
             
             echo "⏳ Attente du démarrage (3 secondes)..."
             sleep 3
