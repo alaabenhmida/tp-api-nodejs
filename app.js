@@ -11,7 +11,6 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.json({
-    name: 'API Gestion Étudiants',
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
