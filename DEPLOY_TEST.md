@@ -125,3 +125,122 @@ No code changes are needed — just the environment variable.
 | `config/database.js` | Added `USE_MEMORY_DB` check; starts `MongoMemoryServer` when set |
 | `package.json` | Moved `mongodb-memory-server` from `devDependencies` → `dependencies` |
 | `.github/workflows/ci.yml` | Added `USE_MEMORY_DB: true` env var + smoke test step |
+
+---
+
+## Steps to Apply These Changes on Another Project
+
+Follow these steps to make any Node.js + Mongoose app run with an in-memory MongoDB instead of a real one.
+
+### Step 1 — Install `mongodb-memory-server` as a production dependency
+
+```bash
+npm install mongodb-memory-server
+```
+
+> Do **not** use `--save-dev`. It must be a regular dependency so it is available on the server.
+
+---
+
+### Step 2 — Update your database connection file
+
+Open the file where you call `mongoose.connect(...)` (e.g. `config/database.js`) and replace its content with a version that checks for the `USE_MEMORY_DB` environment variable:
+
+```js
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+    try {
+        let uri = process.env.MONGODB_URI;
+
+        // If USE_MEMORY_DB=true or no URI is set, start an in-memory MongoDB
+        if (!uri || process.env.USE_MEMORY_DB === 'true') {
+            const { MongoMemoryServer } = require('mongodb-memory-server');
+            const mongod = await MongoMemoryServer.create();
+            uri = mongod.getUri();
+            console.log('⚡ In-memory MongoDB started (test mode)');
+        }
+
+        const conn = await mongoose.connect(uri);
+        console.log(`✅ MongoDB connected: ${conn.connection.host}`);
+    } catch (error) {
+        console.error(`❌ MongoDB connection error: ${error.message}`);
+        process.exit(1);
+    }
+};
+
+module.exports = connectDB;
+```
+
+---
+
+### Step 3 — Set the environment variable
+
+Create or update your `.env` file in the project root:
+
+```
+PORT=3000
+USE_MEMORY_DB=true
+```
+
+Do **not** commit `.env` to git. Add it to `.gitignore` if it isn't already.
+
+---
+
+### Step 4 — Update the CI workflow (GitHub Actions)
+
+In your `.github/workflows/ci.yml`, add `USE_MEMORY_DB: true` to the `env` block of the job, and add a smoke-test step after your tests:
+
+```yaml
+env:
+  NODE_ENV: test
+  USE_MEMORY_DB: true   # ← add this line
+
+steps:
+  # ... your existing steps ...
+
+  - name: 🚀 Smoke test — start server with in-memory MongoDB
+    run: |
+      node server.js &
+      SERVER_PID=$!
+      sleep 5
+      curl --fail http://localhost:${PORT:-3000}/ || (kill $SERVER_PID && exit 1)
+      echo "✅ Smoke test passed"
+      kill $SERVER_PID
+```
+
+This removes any need for a MongoDB service in CI — no `services:` block, no credentials.
+
+---
+
+### Step 5 — Verify everything works
+
+Run locally:
+
+```bash
+# Linux / macOS
+USE_MEMORY_DB=true node server.js
+
+# Windows PowerShell
+$env:USE_MEMORY_DB="true"; node server.js
+```
+
+Expected output:
+
+```
+⚡ In-memory MongoDB started (test mode)
+✅ MongoDB connected: 127.0.0.1
+Server started on port 3000
+```
+
+> **First run only:** `mongodb-memory-server` downloads a MongoDB binary (~500 MB). Subsequent starts are instant.
+
+---
+
+### Step 6 — Commit and push
+
+```bash
+git add config/database.js package.json package-lock.json .github/workflows/ci.yml
+git commit -m "feat: use in-memory MongoDB for test deployment"
+git push origin main
+```
