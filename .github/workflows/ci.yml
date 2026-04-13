@@ -31,6 +31,8 @@ jobs:
       PORT: ${{ secrets.PORT }}
       # Pour les tests, on peut aussi définir une variable inline
       NODE_ENV: test
+      # Utiliser MongoDB en mémoire — aucune installation MongoDB requise
+      USE_MEMORY_DB: true
 
     steps:
       - name: 📥 Checkout du code
@@ -47,3 +49,13 @@ jobs:
 
       - name: 🧪 Lancer les tests
         run: npm test
+
+      - name: 🚀 Smoke test — démarrer le serveur avec MongoDB en mémoire
+        run: |
+          node server.js &
+          SERVER_PID=$!
+          echo "Serveur démarré (PID $SERVER_PID)"
+          sleep 5
+          curl --fail http://localhost:${PORT:-3000}/ || (kill $SERVER_PID && exit 1)
+          echo "✅ Smoke test réussi — le serveur répond correctement"
+          kill $SERVER_PID
