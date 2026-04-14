@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 
 app.get('/', (req, res) => {
-  res.json({ message: 'API Gestion Étudiants v1.0' });
+  res.json({ message: 'API Gestion Étudiants v2.0 with ansible' });
 });
 
 app.get('/health', (req, res) => {
