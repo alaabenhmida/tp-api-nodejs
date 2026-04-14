@@ -1,0 +1,171 @@
+# ============================================
+# PLAYBOOK : Déploiement de l'application
+# ============================================
+# Ce playbook déploie la dernière version de l'API Node.js
+# sur le serveur EC2 déjà configuré par playbook-setup.yml
+#
+# Usage : ansible-playbook playbook-deploy.yml
+# ============================================
+
+---
+- name: 🚀 Déploiement de l'API Node.js
+  hosts: webservers
+  become: no  # On déploie en tant que ec2-user, pas root
+  gather_facts: false
+
+  # ──────────────────────────────────────────
+  # Variables
+  # ──────────────────────────────────────────
+  vars:
+    app_dir: "/home/ec2-user/app"
+    app_port: 3000
+    node_env: "production"
+    github_repo: "https://github.com/alaabenhmida/tp-api-nodejs.git"
+    github_branch: "main"
+    # mongodb_uri: ""  # Décommentez et remplissez si vous avez MongoDB
+
+  pre_tasks:
+    - name: 🔌 Vérifier la connexion SSH (fail fast)
+      wait_for_connection:
+        timeout: 25
+        connect_timeout: 8
+        sleep: 2
+
+  # ──────────────────────────────────────────
+  # Tâches
+  # ──────────────────────────────────────────
+  tasks:
+
+    # ── 1. Récupérer le code depuis GitHub ──
+    - name: 📁 Créer le dossier de l'application
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: 🔎 Vérifier si le dépôt existe déjà
+      stat:
+        path: "{{ app_dir }}/.git"
+      register: repo_git_dir
+
+    - name: 📥 Cloner le dépôt (timeout 120s)
+      shell: |
+        timeout 120 git clone --depth 1 --branch {{ github_branch }} {{ github_repo }} {{ app_dir }}
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+      when: not repo_git_dir.stat.exists
+
+    - name: 🔄 Mettre à jour le dépôt existant (timeout 120s)
+      shell: |
+        timeout 120 git fetch --depth 1 origin {{ github_branch }}
+        git checkout {{ github_branch }}
+        git reset --hard origin/{{ github_branch }}
+      args:
+        chdir: "{{ app_dir }}"
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+      when: repo_git_dir.stat.exists
+
+    - name: 🧾 Lire le commit déployé
+      command: git rev-parse HEAD
+      args:
+        chdir: "{{ app_dir }}"
+      register: deployed_commit
+      changed_when: false
+
+    - name: 📋 Afficher le commit déployé
+      debug:
+        msg: "Commit déployé : {{ deployed_commit.stdout }}"
+
+    # ── 2. Générer le fichier .env ──
+    - name: ⚙️ Générer le fichier .env depuis le template
+      template:
+        src: templates/env.j2
+        dest: "{{ app_dir }}/.env"
+        mode: '0600'
+      # Le module 'template' utilise Jinja2 pour générer le fichier
+      # mode: '0600' → seul le propriétaire peut lire/écrire (sécurité)
+
+    # ── 3. Installer les dépendances ──
+    - name: 📦 Installer les dépendances npm (production)
+      npm:
+        path: "{{ app_dir }}"
+        production: yes
+        state: present
+      # production: yes → équivalent de npm install --omit=dev
+
+    # ── 4. Copier le fichier ecosystem PM2 ──
+    - name: 📋 Vérifier que ecosystem.config.js existe
+      stat:
+        path: "{{ app_dir }}/ecosystem.config.js"
+      register: ecosystem_file
+
+    - name: ❌ Échouer si ecosystem.config.js est absent
+      fail:
+        msg: "ecosystem.config.js introuvable dans {{ app_dir }} ! Assurez-vous qu'il est dans votre dépôt Git."
+      when: not ecosystem_file.stat.exists
+      # Le module 'fail' arrête le playbook avec un message d'erreur explicite
+      # Mieux qu'une erreur cryptique de PM2
+
+    # ── 5. Démarrer ou redémarrer l'application ──
+    - name: 🚀 Démarrer/Recharger l'application avec PM2
+      shell: |
+        timeout 60 pm2 startOrReload ecosystem.config.js --env production
+      args:
+        chdir: "{{ app_dir }}"
+      register: pm2_result
+      changed_when: true
+      failed_when: pm2_result.rc != 0
+
+    - name: 📋 Sortie PM2 (startOrReload)
+      debug:
+        msg: "{{ pm2_result.stdout | default('') }} {{ pm2_result.stderr | default('') }}"
+
+    - name: 📋 Afficher le statut PM2
+      command: pm2 jlist
+      register: pm2_status
+      changed_when: false
+
+    - name: 📋 Statut de l'application
+      debug:
+        msg: "{{ pm2_status.stdout | from_json | map(attribute='name') | list }} — en cours d'exécution"
+      ignore_errors: yes
+
+    # ── 6. Sauvegarder la liste PM2 ──
+    - name: 💾 Sauvegarder les processus PM2 (persistance au reboot)
+      command: pm2 save
+      changed_when: false
+
+    # ── 7. Health check ──
+    - name: ⏳ Attendre que l'application démarre
+      pause:
+        seconds: 3
+
+    - name: 🏥 Vérifier que l'API répond (health check)
+      uri:
+        url: "http://localhost:{{ app_port }}/"
+        method: GET
+        status_code: [200, 301, 302, 404]
+        timeout: 10
+      register: health_check
+      retries: 5
+      delay: 3
+      until: health_check.status != -1
+      # Le module 'uri' fait une requête HTTP
+      # retries: 5 → réessaie jusqu'à 5 fois
+      # delay: 3 → attend 3 secondes entre les essais
+      # On accepte 404 car certaines routes peuvent ne pas exister à /
+
+    - name: ✅ Déploiement réussi !
+      debug:
+        msg: |
+          ════════════════════════════════════════
+           ✅ DÉPLOIEMENT RÉUSSI !
+          ════════════════════════════════════════
+           🌐 URL : http://{{ ansible_host }}:{{ app_port }}
+           📦 Commit : {{ deployed_commit.stdout[:8] }}
+           📅 Date : {{ lookup('pipe', 'date -Iseconds') }}
+          ════════════════════════════════════════
+
+  # Pas de handler PM2 ici : la tâche startOrReload ci-dessus gère déjà
+  # le redémarrage de manière déterministe pendant le déploiement.
