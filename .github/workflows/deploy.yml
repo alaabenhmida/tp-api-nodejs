@@ -1,94 +1,84 @@
-name: CD - Déploiement AWS (Ansible)
+name: CD - Déploiement AWS
 
 on:
+  # Se déclenche quand le workflow CI réussit sur main
   workflow_run:
     workflows: ["CI - Tests"]
     types:
       - completed
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: 🚀 Déployer avec Ansible
+    name: 🚀 Déployer sur EC2
 
+    # Seulement si le CI a réussi
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     environment:
       name: production
 
     steps:
-      # Étape 1 : Récupérer le code source
+      # 1. Récupérer le code
       - name: 📥 Checkout du code
         uses: actions/checkout@v4
 
-      # Étape 2 : Installer Ansible
-      - name: 🤖 Installer Ansible
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ansible
-          ansible --version
-
-      # Étape 3 : Configurer SSH
+      # 2. Préparer la connexion SSH
       - name: 🔑 Configurer la clé SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          printf "%s" "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
           chmod 600 ~/.ssh/ec2_key
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      # Étape 4 : Générer l'inventaire dynamique
-      - name: 📋 Générer l'inventaire Ansible
+      # 3. Copier les fichiers sur le serveur
+      - name: 📦 Envoyer les fichiers au serveur
         run: |
-          cat > ansible/inventory-ci.ini << EOF
-          [webservers]
-          ec2-api ansible_host=${{ secrets.EC2_HOST }}
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '.env' \
+            --exclude 'coverage' \
+            --exclude '__tests__' \
+            --exclude 'terraform' \
+            -e "ssh -i ~/.ssh/ec2_key" \
+            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/app/
 
-          [webservers:vars]
-          ansible_user=${{ secrets.EC2_USER }}
-          ansible_ssh_private_key_file=~/.ssh/ec2_key
-          ansible_ssh_common_args='-o StrictHostKeyChecking=no'
-          EOF
-
-      # Étape 5 : Tester la connexion
-      - name: 🏓 Tester la connexion Ansible
+      # 4. Installer les dépendances et redémarrer
+      - name: 🔄 Installer et redémarrer l'application
         run: |
-          cd ansible
-          ansible webservers -i inventory-ci.ini -m ping
+          ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 \
+            -i ~/.ssh/ec2_key \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'ENDSSH'
+              cd /home/ec2-user/app
+              echo "📦 Installation des dépendances..."
+              npm install --omit=dev
+              echo "🔄 Redémarrage de l'application..."
+              pm2 delete tp-api || true
+              pm2 start ecosystem.config.js --env production
+              sleep 3
+              pm2 status
+          ENDSSH
 
-      # Étape 6 : Lancer le déploiement
-      - name: 🚀 Déployer avec Ansible
+      # 5. Vérifier que l'API répond
+      - name: 🏥 Vérification de santé
         run: |
-          cd ansible
-          ansible-playbook -i inventory-ci.ini playbook-deploy.yml \
-            -e "github_repo=https://github.com/${{ github.repository }}.git" \
-            -e "github_branch=${{ github.ref_name }}"
-        # -e passe des variables extra au playbook
-        # Cela surcharge les variables définies dans le playbook
-
-      # Étape 7 : Health check final
-      - name: 🏥 Health check depuis l'extérieur
-        run: |
-          echo "🔍 Vérification externe de l'API..."
+          echo "🔍 Vérification que l'API répond..."
           for i in {1..10}; do
             HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
               http://${{ secrets.EC2_HOST }}:3000/ || echo "000")
-
             if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 500 ]; then
-              echo "✅ API accessible depuis Internet ! (HTTP $HTTP_STATUS)"
+              echo "✅ API accessible ! (HTTP $HTTP_STATUS)"
               exit 0
             fi
-
             echo "⏳ Tentative $i/10 — HTTP $HTTP_STATUS — nouvelle tentative dans 3s..."
             sleep 3
           done
-
-          echo "❌ L'API ne répond pas depuis l'extérieur"
+          echo "❌ L'API ne répond pas après 30 secondes"
           exit 1
 
-      # Étape 8 : Nettoyage
+      # 6. Nettoyer la clé SSH
       - name: 🧹 Nettoyage
         if: always()
-        run: |
-          rm -f ~/.ssh/ec2_key
-          rm -f ansible/inventory-ci.ini
+        run: rm -f ~/.ssh/ec2_key
