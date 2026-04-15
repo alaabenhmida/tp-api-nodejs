@@ -1,87 +1,78 @@
 # ============================================
-# PLAYBOOK : Configuration initiale du serveur
+# PLAYBOOK : Installer les logiciels sur le serveur
 # ============================================
-# Ce playbook prépare une instance EC2 vierge pour héberger
-# une application Node.js avec PM2
+# Ce playbook prend un serveur vierge et installe :
+# - Node.js 20
+# - PM2 (gestionnaire de processus)
+# - Git
 #
-# Usage : ansible-playbook playbook-setup.yml
+# Lancer : ansible-playbook playbook-setup.yml
 # ============================================
 
 ---
-- name: 🔧 Configuration du serveur pour l'API Node.js
-  hosts: webservers
-  become: yes  # Exécuter avec sudo (nécessaire pour installer des paquets)
+- name: 🔧 Configuration du serveur
+  hosts: webservers        # Sur quels serveurs ? (définis dans inventory.ini)
+  become: yes              # Utiliser sudo (nécessaire pour installer des paquets)
 
-  # ──────────────────────────────────────────
-  # Variables
-  # ──────────────────────────────────────────
+  # ── Les paramètres ──
   vars:
     node_version: "20"
     app_user: "ec2-user"
     app_dir: "/home/ec2-user/app"
     app_port: 3000
 
-  # ──────────────────────────────────────────
-  # Tâches
-  # ──────────────────────────────────────────
+  # ── Les tâches à effectuer ──
   tasks:
 
-    # ── 1. Mise à jour du système ──
-    - name: 📦 Mettre à jour tous les paquets du système
+    # 1. Mettre à jour le système
+    - name: 📦 Mettre à jour le système
       yum:
         name: "*"
         state: latest
-      # Le module 'yum' gère les paquets sur Amazon Linux/RHEL
-      # state: latest → met à jour vers la dernière version
 
-    # ── 2. Installer les outils de base ──
-    - name: 🔧 Installer les paquets de base
+    # 2. Installer les outils de base
+    - name: 🔧 Installer Git, wget et unzip
       yum:
         name:
           - git
           - wget
           - unzip
         state: present
-      # state: present → installe si absent, ne fait rien si déjà installé
-      # C'est ça l'idempotence !
+      # state: present = "installe si pas déjà installé"
+      # C'est l'idempotence : si c'est déjà là, Ansible ne fait rien
 
-    # ── 3. Configurer le dépôt NodeSource ──
-    - name: 🟢 Ajouter le dépôt NodeSource pour Node.js {{ node_version }}
+    # 3. Ajouter le dépôt Node.js
+    - name: 🟢 Configurer le dépôt Node.js {{ node_version }}
       shell: |
         curl -fsSL https://rpm.nodesource.com/setup_{{ node_version }}.x | bash -
       args:
         creates: /etc/yum.repos.d/nodesource-el9.repo
-      # 'creates' rend cette tâche idempotente :
-      # si le fichier existe déjà, la tâche est sautée (skipped)
+      # "creates" = si ce fichier existe déjà, sauter cette étape
 
-    # ── 4. Installer Node.js ──
+    # 4. Installer Node.js
     - name: 🟢 Installer Node.js
       yum:
         name: nodejs
         state: present
 
+    # 5. Vérifier Node.js
     - name: 🟢 Vérifier la version de Node.js
       command: node --version
-      register: node_version_output
-      changed_when: false
-      # register: sauvegarde le résultat dans une variable
-      # changed_when: false → cette tâche est informative, pas un changement
+      register: node_version_output    # Sauvegarder le résultat
+      changed_when: false              # Cette tâche ne "change" rien
 
     - name: 📋 Afficher la version de Node.js
       debug:
         msg: "Node.js installé : {{ node_version_output.stdout }}"
-      # Le module 'debug' affiche un message dans la sortie d'Ansible
 
-    # ── 5. Installer PM2 ──
-    - name: 📦 Installer PM2 globalement
+    # 6. Installer PM2
+    - name: 📦 Installer PM2
       npm:
         name: pm2
         global: yes
         state: present
-      # Le module 'npm' gère les paquets npm
-      # global: yes → installation globale (-g)
 
-    - name: 📋 Vérifier la version de PM2
+    - name: 📋 Vérifier PM2
       command: pm2 --version
       register: pm2_version_output
       changed_when: false
@@ -90,50 +81,39 @@
       debug:
         msg: "PM2 installé : {{ pm2_version_output.stdout }}"
 
-    # ── 6. Créer le répertoire de l'application ──
-    - name: 📁 Créer le répertoire de l'application
+    # 7. Créer le dossier de l'application
+    - name: 📁 Créer le dossier /home/ec2-user/app
       file:
         path: "{{ app_dir }}"
         state: directory
         owner: "{{ app_user }}"
         group: "{{ app_user }}"
         mode: '0755'
-      # Le module 'file' gère les fichiers et répertoires
-      # state: directory → crée le dossier s'il n'existe pas
 
-    # ── 7. Configurer PM2 pour démarrer au boot ──
-    - name: 🔄 Configurer PM2 startup (démarrage au boot)
+    # 8. Configurer PM2 pour redémarrer au boot
+    - name: 🔄 Configurer PM2 au démarrage du serveur
       command: "pm2 startup systemd -u {{ app_user }} --hp /home/{{ app_user }}"
       become_user: root
       register: pm2_startup
       changed_when: "'already' not in pm2_startup.stdout"
-      # PM2 startup crée un service systemd qui relance
-      # les applications PM2 au redémarrage du serveur
 
-    # ── 8. Ouvrir le pare-feu (si firewalld est actif) ──
-    - name: 🔥 Vérifier si firewalld est installé
+    # 9. Ouvrir le port dans le pare-feu (si actif)
+    - name: 🔥 Vérifier si le pare-feu est actif
       command: systemctl is-active firewalld
       register: firewalld_status
       changed_when: false
       failed_when: false
-      # failed_when: false → ne pas échouer si firewalld n'existe pas
 
-    - name: 🔥 Ouvrir le port {{ app_port }} dans le pare-feu
+    - name: 🔥 Ouvrir le port {{ app_port }}
       firewalld:
         port: "{{ app_port }}/tcp"
         permanent: yes
         state: enabled
         immediate: yes
       when: firewalld_status.rc == 0
-      # when: exécute cette tâche SEULEMENT si firewalld est actif
-      # Sur Amazon Linux 2023, firewalld n'est pas actif par défaut
+      # "when" = exécuter cette tâche SEULEMENT si la condition est vraie
 
-  # ──────────────────────────────────────────
-  # Handlers
-  # ──────────────────────────────────────────
   handlers:
     - name: Redémarrer PM2
       become_user: "{{ app_user }}"
       command: pm2 reload all
-      # Un handler n'est exécuté que si une tâche le notifie
-      # via 'notify: Redémarrer PM2'
