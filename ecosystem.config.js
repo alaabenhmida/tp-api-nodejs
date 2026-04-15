@@ -1,6 +1,6 @@
 module.exports = {
   apps: [{
-    name: 'tp-api',
+    name: 'tp-api-nodejs',
     script: './server.js',
     instances: 1,
     autorestart: true,
